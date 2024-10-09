@@ -11,7 +11,7 @@ library(ggplot2)
 library(plotly)
 
 ## IMPORT DES DONNÉES 
-data <- read.table(file = "/Users/achillegausseres/OneDrive/PRO/ACO/3A/Projet_Big_Data/dfplusIQA.csv", 
+data <- read.table(file = "dfplusIQA.csv", 
                    header = T, sep= ",", stringsAsFactors = T)
 
 
@@ -135,8 +135,8 @@ library(rpart)
 library(rpart.plot)
 
 arbre1<- rpart(IQA_binaire~., data= trainData, cp=0.000001)
-print(arbre1)
-library(rpart.plot)
+printcp(arbre1)
+
 plotcp(arbre1)
 cp.opt <- arbre1$cptable %>% as.data.frame() %>% 
   filter(xerror == min(xerror)) %>% select(CP) %>% max() %>% as.numeric()
@@ -201,4 +201,3 @@ ggplot() +
   scale_color_manual(values = c("GLM" = "blue", "CART" = "red")) +  
   labs(color = "Légende des courbes") +  
   theme_minimal() 
-

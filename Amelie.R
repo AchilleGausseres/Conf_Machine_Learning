@@ -87,10 +87,8 @@ foret2 <- ranger(IQA ~ ., data = data.train, probability = TRUE, class.weights =
 
 prediction2 <- predict(foret2, data.test)
 
-# Extraire la classe avec la probabilité la plus élevée pour chaque observation
 pred_class2 <- apply(prediction2$predictions, 1, which.max)
 
-# Facultatif : convertir les numéros de classes en niveaux de facteurs (si IQA est un facteur)
 levels_IQA <- levels(data$IQA)  # Récupérer les niveaux de la variable IQA
 pred_class2 <- factor(pred_class2, levels = seq_along(levels_IQA), labels = levels_IQA)
 

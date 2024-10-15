@@ -2,6 +2,8 @@ library(data.table)
 library(rsample)
 library(ranger)
 library(rpart)
+library(caret)
+library(dplyr)
 
 ## IMPORT DES DONNÉES 
 data <- read.table(file = "dfplusIQA.csv", 
@@ -55,8 +57,11 @@ data.split <- initial_split(data, prop = 3/4)
 data.train <- training(data.split)
 data.test <- testing(data.split)
 
+<<<<<<< HEAD:Amelie.R
 library(dplyr)
 
+=======
+>>>>>>> f1d6cb227ba84b1f190207702313f84982312e11:Foret_aleatoire.R
 # Analyse des classes avec dplyr
 class_distribution <- data %>%
   group_by(IQA) %>%
@@ -69,15 +74,15 @@ print(class_distribution)
 class_weights <- 1 / table(data$IQA)  # Inverser la fréquence
 class_weights <- class_weights/sum(class_weights)
 
-foret2 <- ranger(IQA ~ ., data = data.train, probability = TRUE, class.weights = class_weights)
+foret <- ranger(IQA ~ ., data = data.train, probability = TRUE, class.weights = class_weights)
 
-prediction2 <- predict(foret2, data.test)
+prediction <- predict(foret, data.test)
 
-pred_class2 <- apply(prediction2$predictions, 1, which.max)
+pred_class <- apply(prediction$predictions, 1, which.max)
 
 levels_IQA <- levels(data$IQA)  # Récupérer les niveaux de la variable IQA
-pred_class2 <- factor(pred_class2, levels = seq_along(levels_IQA), labels = levels_IQA)
-pred_class2 <- factor(pred_class2, levels = levels(data.test$IQA))
+pred_class <- factor(pred_class, levels = seq_along(levels_IQA), labels = levels_IQA)
+pred_class <- factor(pred_class, levels = levels(data.test$IQA))
 
 # matrice de confusion pour évaluer le modèle
 
@@ -86,16 +91,28 @@ confusionMatrix(pred_class2, data.test$IQA)
 
 ##############
 
+<<<<<<< HEAD:Amelie.R
 #  Marche pas -> accuracy 47%
+=======
+# N'aide pas, tourne en boucle avec plus de répétition -> accuracy 47%
+>>>>>>> f1d6cb227ba84b1f190207702313f84982312e11:Foret_aleatoire.R
 # Définir le contrôle de la validation croisée avec sur-échantillonnage
 # train_control <- trainControl(method = "cv", number = 5, sampling = "up")  # "up" pour sur-échantillonnage
 
 # A faire
+<<<<<<< HEAD:Amelie.R
 
 # tester hyperparamètres :
 # - taille arbres
 # - nombres d'arbres
 # - taille noeuds
+=======
+# testes hyperparametre :
+       # - taille arbres
+       # - nombre d'arbre
+       # - taille noeud
+# importance des variables
+>>>>>>> f1d6cb227ba84b1f190207702313f84982312e11:Foret_aleatoire.R
 
 
 

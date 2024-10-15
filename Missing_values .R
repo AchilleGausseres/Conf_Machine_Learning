@@ -1,14 +1,28 @@
-require("missForest")
-require(missMDA)
+#Import des données 
 df_og <- read.table("/Users/achillegausseres/OneDrive/PRO/ACO/3A/Conf_Machine_Learning/Conf_Machine_Learning_repo/df.csv",
                     sep=",",
                     header=T,
                     stringsAsFactors = T)#jeu de données original
 str(df_og)
-df_imp<-missForest(df_og)
-class(df_imp$ximp)#le data frame imputé
+
+#Visualisation des données manquantes
+#install.packages("VIM")
+library(VIM)
+aggr(df_og)
+matrixplot(df_og, sortby = 2)
 
 
-nb <- estim_ncpFAMD(mydata) ## tps de calcul long
-res.imp <- imputeFAMD(mydata, ncp = nb$ncp)
-res.famd <- FAMD(mydata, ,tab.disj = res.imp$tab.disj)
+compter_na_par_colonne <- function(tableau) {
+  colSums(is.na(tableau))
+}
+compter_na_par_colonne(df_og)
+
+#Imputation des données manquantes avec des forets aléatoires. 
+#install.packages("missRanger")
+library(missRanger)
+impl <- missRanger(df_og, pmm.k = 5, num.trees = 100, seed = 1)
+
+compter_na_par_colonne(impl)
+
+save(impl, file = "dta_final.Rdata")
+

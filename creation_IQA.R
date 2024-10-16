@@ -155,15 +155,9 @@ data$IQAO3 <- (data$index_high - data$index_low)/(data$C_high-data$C_low)*(data$
 
 save(data, file="data_.RData")
 
-df$IQA_PM2.5 <- data$IQAPM2.5
-df$IQA_PM10 <- data$IQAPM10
-df$IQA_SO2 <- data$IQA_SO2
-df$IQA_CO <- data$IQACO
-df$IQA_NO2 <- data$IQANO2
-df$IQA_O3 <- data$IQAO3
 
 data$IQA <- sapply(1:nrow(data), function(i) {
-  # Check conditions
+  # création de la colonne IQA selon les critères de classfication
   if (!(data$IQAPM2.5[i] > 50 | data$IQAPM10[i] > 50 | data$IQA_SO2[i] > 50 | 
         data$IQACO[i] > 50 | data$IQANO2[i] > 50 | data$IQAO3[i] > 50)) {
     return("bon")

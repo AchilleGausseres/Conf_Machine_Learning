@@ -154,7 +154,7 @@ plot(acc[1:48], type = "l", main = "deux premiers jours", xlab = "heures", ylab 
 plot(acc[1:72], type = "l", main = "trois premiers jours", xlab = "heures", ylab = "accuracy")
 plot(acc[1:168], type = "l", main = "trois premiers jours", xlab = "heures", ylab = "accuracy")
 par(mfrow = c(1, 1))
-plot(acc, type = "l", main = "l'accuracy au cours du temps sur tout le dataset data.test", xlab = "heures", ylab = "accuracy")
+plot(acc, type = "l", main = "l'accuracy cumulative au cours du temps sur tout le dataset data.test", xlab = "heures", ylab = "accuracy")
 ```
 pareil mais pour chaque indices
 ```{r}
@@ -169,9 +169,9 @@ cumulative_accuracy_df <- data %>%
 
 ggplot(cumulative_accuracy_df, aes(x = index, y = cumulative_accuracy, color = predicted_IQAs)) +
   geom_line(size = 1,alpha=0.7) + 
-  labs(title = "Cumulative Prediction Accuracy Over Time by IQA Level",
-       x = "Time Index",
-       y = "Cumulative Accuracy") +
+  labs(title = "accuracy cumulative de la prédiction du IQA au cours du temps par niveau",
+       x = "heure",
+       y = "accuracy cumulative") +
   theme_minimal() +
   scale_y_continuous(labels = scales::percent) + 
   theme(plot.title = element_text(hjust = 0.5)) +

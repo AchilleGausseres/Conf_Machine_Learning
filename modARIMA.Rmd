@@ -1,0 +1,200 @@
+---
+title: "modèle ARIMA"
+author: "prune"
+date: "16/10/2024"
+output: html_document
+---
+
+##fichier méthode ARIMA
+
+```{r}
+library(dplyr)#mutate_if et autres
+library(lubridate)#transformation datetime
+library(ggplot2)#visualisations plot
+library(zoo)#moving average et zoo::interp pour les NAs
+library(forecast)#modèles ARIMAS, prédiction forecast::forecast
+library(caret)#caret::confusionMatrix
+library(tidyr)
+```
+
+importation et création du dataset 'data'.
+```{r}
+df<-read.table("dfplusIQA_NAcomplet.csv",sep=",",header = T,stringsAsFactors = T)#nom du fichier avec NAs imputés, toutes colonnes créées| s'assurer que le jeu de données s'appelle df
+
+str(df)#visualisation des variables
+#df$year <- as.numeric(df$year)
+#df$month <- as.numeric(df$month)
+#df$day <- as.numeric(df$day)
+#df$hour <- as.numeric(df$hour)
+df$IQA_numeric <- apply(df[, 19:24], 1, max)#création de la colonne IQA_numeric à partir des IQA individuelles
+```
+
+fonction utile pour la prédiction par la suite
+```{r}
+convert_to_IQAs <- function(predictions) {#fonction utile par la suite
+  sapply(as.numeric(predictions), function(value) {
+    if (value <= 50) {
+      return("bon")
+    } else if (value <= 100) {
+      return("modéré")
+    } else if (value <= 150) {
+      return("non-sain pour sensibles")
+    } else if (value <= 200) {
+      return("non-sain")
+    } else if (value <= 300) {
+      return("très non-sain")
+    } else {
+      return("dangereux")
+    }
+  })
+}
+```
+
+choix de la station parmi les 12
+```{r}
+liste_des_stations <- levels(df$station)#liste des stations
+nom_station <- liste_des_stations[10]
+print(paste("station:",nom_station))
+data <- df[df$station == nom_station,]#df avec seulement les lignes associées à la station nom_station
+```
+création data.train et data.test
+```{r}
+data.train<-data[1:df[336615,]$No,]
+data.test<-data[(df[336615,]$No+1):nrow(data),]
+```
+analyse des paramètres d'ARIMA attendus
+```{r}
+Acf(data.train$IQA_numeric, lag.max = 48)->acf1  # 48 lags 
+
+Pacf(data.train$IQA_numeric, lag.max = 48)->pacf1
+head(pacf1$acf,4)
+
+cat(paste("le modèle est-il à différencier? 0 si non, d fois sinon.","\nd =", ndiffs(data.train$IQA_numeric)))
+
+```
+interprétations: 
+  ¤ l'Acf diminue graduellement > longue mémoire ou composante intégrée. moyenne mobile présente
+  ¤ p=1 sur le graphe d'auto-régression. auto régression d'ordre 1 => la valeur actuelle est influencée surtout par la dernière valeure
+
+
+
+modèle ARIMA sur data.train. variable réponse Y = IQA_numeric
+```{r}
+external_vars<-data.train[,c(2:5,12:15,17)]#uniquement variables numériques (!colonne 16)
+mod.arima <- auto.arima(data.train$IQA_numeric, xreg = as.matrix(external_vars))
+res1<-summary(mod.arima)
+res2<-checkresiduals(mod.arima)
+```
+auto.arima a identifier les paramètres (p=2, d=0, q = 1) pour un modèle optimisé.
+la significativité de ce modèle est cependant ~0.03 < 0.05 signifiant que les résidus ont toujours un effet sur la valeur actuelle (i.e. l'effet des résidus n'a pas totalement été enlevé du modèle)
+
+prédiction sur le jeu de données test
+```{r}
+external_vars_test<-data.test[,c(2:5,12:15,17)]#sans les concentrations de polluants
+forecasted_values <- forecast(mod.arima, xreg = as.matrix(external_vars_test))
+```
+transformation des IQAs numériques obtenus en IQA afin de comparer aux vraies valeurs
+```{r}
+predicted_IQAs <- convert_to_IQAs(forecasted_values$mean)
+actual_IQAs <- data.test$IQA
+predicted_IQAs <- factor(predicted_IQAs, levels = c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux"))
+actual_IQAs <- factor(actual_IQAs, levels = c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux"))
+```
+
+matrices de confusion
+```{r, warning=FALSE}
+#prédictions pour le premier jour (24 premières heures)
+  confusion_matrix24 <- confusionMatrix(as.factor(predicted_IQAs[1:24]), as.factor(actual_IQAs[1:24]))
+  #prédictions pour les 48h
+  confusion_matrix48 <- confusionMatrix(as.factor(predicted_IQAs[1:48]), as.factor(actual_IQAs[1:48]))
+  #prédictions pour les 72h
+  confusion_matrix72 <- confusionMatrix(as.factor(predicted_IQAs[1:72]), as.factor(actual_IQAs[1:72]))
+  #prédictions pour la première semaine
+  confusion_matrix168 <- confusionMatrix(as.factor(predicted_IQAs[1:168]), as.factor(actual_IQAs[1:168]))
+  #prédictions pour tout le data set data.test
+  confusion_matrix <- confusionMatrix(as.factor(predicted_IQAs), as.factor(actual_IQAs))
+  
+  print(confusion_matrix$table)
+  print(confusion_matrix$byClass)
+  
+  # Output the confusion matrix
+  print("-----------accuracy par plage de temps-----------")
+  cat(paste("accuracy 24h:", round(confusion_matrix24$overall[1],3),"%",
+              "\naccuracy 48h:", round(confusion_matrix48$overall[1],3),"%",
+              "\naccuracy 72h:", round(confusion_matrix72$overall[1],3),"%",
+              "\naccuracy 168h:", round(confusion_matrix168$overall[1],3),"%",
+              "\naccuracy globale:", round(confusion_matrix$overall[1],3),"%"
+              ))
+```
+aide à l'interprétation des spécifité et sensitivité
+```{r}
+data.test$IQA <- factor(data.test$IQA, levels = c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux"))
+for (i in 1:length(summary(data.test$IQA))){
+    print(paste(levels(data.test$IQA)[i],":",100*round((summary(data.test$IQA)[i]/length(data.test$IQA)),2),"%"))
+  }
+```
+>dataset déséquilibré
+
+visualisation de l'accuracy au cours du temps
+```{r}
+bonne_prediction<-predicted_IQAs==actual_IQAs
+acc <- c()
+num<-0
+for (i in 1:length(bonne_prediction)){
+  if (bonne_prediction[i]){#si bonne prédiction
+    num <- num+1
+    acc<-c(acc,num/i)
+  }else{
+    acc<-c(acc,num/i)
+  }
+}
+par(mfrow = c(2, 2))
+plot(acc[1:24], type = "l", main = "premier jour", xlab = "heures", ylab = "accuracy")
+plot(acc[1:48], type = "l", main = "deux premiers jours", xlab = "heures", ylab = "accuracy")
+plot(acc[1:72], type = "l", main = "trois premiers jours", xlab = "heures", ylab = "accuracy")
+plot(acc[1:168], type = "l", main = "trois premiers jours", xlab = "heures", ylab = "accuracy")
+par(mfrow = c(1, 1))
+plot(acc, type = "l", main = "l'accuracy au cours du temps sur tout le dataset data.test", xlab = "heures", ylab = "accuracy")
+```
+pareil mais pour chaque indices
+```{r}
+data <- data.frame(index = 1:length(predicted_IQAs), 
+                   predicted_IQAs = predicted_IQAs, 
+                   bonne_prediction = bonne_prediction)
+
+cumulative_accuracy_df <- data %>%
+  group_by(predicted_IQAs) %>%
+  mutate(cumulative_accuracy = cumsum(bonne_prediction) / row_number()) %>%
+  ungroup()
+
+ggplot(cumulative_accuracy_df, aes(x = index, y = cumulative_accuracy, color = predicted_IQAs)) +
+  geom_line(size = 1,alpha=0.7) + 
+  labs(title = "Cumulative Prediction Accuracy Over Time by IQA Level",
+       x = "Time Index",
+       y = "Cumulative Accuracy") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent) + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values = c("bon" = "green", 
+                                  "modéré" = "yellow", 
+                                  "non-sain pour sensibles" = "orange", 
+                                  "non-sain" = "red", 
+                                  "très non-sain" = "purple", 
+                                  "dangereux" = "purple4"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

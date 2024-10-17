@@ -71,13 +71,15 @@ print(class_distribution)
 class_weights <- 1 / (table(data$IQA))
 class_weights <- class_weights/sum(class_weights)
 
-foret <- ranger(IQA ~ ., data = data.train, probability = TRUE, class.weights = class_weights, importance = "impurity")
+foret <- ranger(IQA ~ ., data = data.train, probability = TRUE, 
+                class.weights = class_weights, importance = "impurity")
 
 prediction <- predict(foret, data.test)
 
 pred_class <- apply(prediction$predictions, 1, which.max)
 
-pred_class <- factor(pred_class, levels = seq_along(levels_order), labels = levels_order)
+pred_class <- factor(pred_class, levels = seq_along(levels_order), 
+                     labels = levels_order)
 
 # matrice de confusion pour évaluer le modèle
 

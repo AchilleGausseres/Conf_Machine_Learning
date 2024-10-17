@@ -15,6 +15,15 @@ data <- data[,-(6:11)]    # enlever 6 facteurs de pollution
 data <- data[,-(13:18)]   # enelever IQA par facteur
 
 
+data <- read.table(file = "dfplusIQA.csv", 
+                   header = T, sep= ",", stringsAsFactors = T)
+
+
+# Vérifier les valeurs manquantes
+sapply(data, function(x) sum(is.na(x)))
+data <- na.omit(data)
+sapply(data, function(x) sum(is.na(x)))
+
 # Utiliser data.table pour créer des lags par station
 data <- as.data.table(data)
 setkey(data, station, year, month, day, hour)
@@ -102,13 +111,9 @@ control <- trainControl(method = "cv", number = 5, search = "random")
 
 # => trop long à tourner, on garde les valeurs prise par ranger pour faire le modèle
 
-
 ##############
 
 # N'aide pas, tourne en boucle avec plus de répétition -> accuracy 47%
 # Définir le contrôle de la validation croisée avec sur-échantillonnage
 # train_control <- trainControl(method = "cv", number = 5, sampling = "up")  # "up" pour sur-échantillonnage
-
-# importance des variables
-
 

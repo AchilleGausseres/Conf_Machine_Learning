@@ -6,14 +6,18 @@ library(caret)
 library(dplyr)
 
 ## IMPORT DES DONNÉES 
-data <- read.table(file = "dfplusIQA.csv", 
-                   header = T, sep= ",", stringsAsFactors = T)
+data <- read.table(file = "dfplusIQA_NAcomplet.csv", 
+                   header = T, sep= ",", stringsAsFactors = T, encoding = "utf-8")
 
 
 ## REORGANISATION DU JEU DE DONNÉES   
-data <- data[,-(6:11)]
-data <- data[,-(13:19)]
-data <- data[,-14]
+data <- data[,-(6:11)]    # enlever 6 facteurs de pollution
+data <- data[,-(13:18)]   # enelever IQA par facteur
+
+
+data <- read.table(file = "dfplusIQA.csv", 
+                   header = T, sep= ",", stringsAsFactors = T)
+
 
 # Vérifier les valeurs manquantes
 sapply(data, function(x) sum(is.na(x)))
@@ -43,19 +47,19 @@ data <- as.data.frame(data)
 # Supprimer les premières lignes avec NA dues aux lags
 data <- na.omit(data)
 
-data <- data[,-(1:5)]
-data <-data[,-7]
+data <- data[,-(1:5)]   # enleve données temporelles
+data <-data[,-7]        # enleve station
 
 
 ######### Forêt aléatoire ########
 
-### Découpage des données ###
+### Découpage des données 80/20 ###
 
-set.seed(123)
+set.seed(123) # pour la reproductibilité
 
-data.split <- initial_split(data, prop = 3/4)
-data.train <- training(data.split)
-data.test <- testing(data.split)
+data.train <- data[1:336615,]
+data.test <- data[-(1:336615),]
+
 
 # Analyse des classes avec dplyr
 class_distribution <- data %>%
@@ -64,38 +68,55 @@ class_distribution <- data %>%
 
 print(class_distribution)
 
+
 ##### équilibrer les données #####
 
-class_weights <- 1 / table(data$IQA)  # Inverser la fréquence
+class_weights <- 1 / (table(data$IQA))
 class_weights <- class_weights/sum(class_weights)
 
-foret <- ranger(IQA ~ ., data = data.train, probability = TRUE, class.weights = class_weights)
+foret <- ranger(IQA ~ ., data = data.train, probability = TRUE, class.weights = class_weights, importance = "impurity")
 
 prediction <- predict(foret, data.test)
 
 pred_class <- apply(prediction$predictions, 1, which.max)
 
-levels_IQA <- levels(data$IQA)  # Récupérer les niveaux de la variable IQA
-pred_class <- factor(pred_class, levels = seq_along(levels_IQA), labels = levels_IQA)
-pred_class <- factor(pred_class, levels = levels(data.test$IQA))
+levels_order <- c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux")
+
+data.test$IQA <- factor(data.test$IQA, levels = levels_order) # mettre les modalités dans l'ordre
+
+pred_class <- factor(pred_class, levels = levels_order)
 
 # matrice de confusion pour évaluer le modèle
 
-confusionMatrix(pred_class2, data.test$IQA, mode = "prec_recall")
-confusionMatrix(pred_class2, data.test$IQA)
+confusionMatrix(pred_class, data.test$IQA, mode = "prec_recall")
+table_confu <- confusionMatrix(pred_class, data.test$IQA)
+
+
+#### enregistrement RData ####
+
+save(data, file = "data_randomforest.RData")
+save(foret, file = "mod_foret.RData")
+save(table_confu, file = "table_confu.RData")
+
+
+# Test hyperparamètres
+
+weights_vector <- class_weights[as.character(data.train$IQA)]
+control <- trainControl(method = "cv", number = 5, search = "random")
+
+# Random search sur Ranger
+# model <- train(IQA ~ ., 
+#                data = data.train, 
+#                method = "ranger",
+#                weights = weights_vector,
+#                trControl = control, 
+#                tuneLength = 3) # Essayez 3 configurations différentes
+
+# => trop long à tourner, on garde les valeurs prise par ranger pour faire le modèle
 
 ##############
 
 # N'aide pas, tourne en boucle avec plus de répétition -> accuracy 47%
 # Définir le contrôle de la validation croisée avec sur-échantillonnage
 # train_control <- trainControl(method = "cv", number = 5, sampling = "up")  # "up" pour sur-échantillonnage
-
-# A faire
-# testes hyperparametre :
-       # - taille arbres
-       # - nombre d'arbre
-       # - taille noeud
-# importance des variables
-
-
 

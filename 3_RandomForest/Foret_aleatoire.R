@@ -15,15 +15,6 @@ data <- data[,-(6:11)]    # enlever 6 facteurs de pollution
 data <- data[,-(13:18)]   # enelever IQA par facteur
 
 
-data <- read.table(file = "dfplusIQA.csv", 
-                   header = T, sep= ",", stringsAsFactors = T)
-
-
-# Vérifier les valeurs manquantes
-sapply(data, function(x) sum(is.na(x)))
-data <- na.omit(data)
-sapply(data, function(x) sum(is.na(x)))
-
 # Utiliser data.table pour créer des lags par station
 data <- as.data.table(data)
 setkey(data, station, year, month, day, hour)
@@ -49,6 +40,12 @@ data <- na.omit(data)
 
 data <- data[,-(1:5)]   # enleve données temporelles
 data <-data[,-7]        # enleve station
+
+##### ordonner modalités #####
+
+levels_order <- c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux")
+
+data$IQA <- factor(data$IQA, levels = levels_order) # mettre les modalités dans l'ordre
 
 
 ######### Forêt aléatoire ########
@@ -80,17 +77,31 @@ prediction <- predict(foret, data.test)
 
 pred_class <- apply(prediction$predictions, 1, which.max)
 
-levels_order <- c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux")
-
-data.test$IQA <- factor(data.test$IQA, levels = levels_order) # mettre les modalités dans l'ordre
-
-pred_class <- factor(pred_class, levels = levels_order)
+pred_class <- factor(pred_class, levels = seq_along(levels_order), labels = levels_order)
 
 # matrice de confusion pour évaluer le modèle
 
 confusionMatrix(pred_class, data.test$IQA, mode = "prec_recall")
 table_confu <- confusionMatrix(pred_class, data.test$IQA)
 
+conf_table <- as.data.frame(table_confu$table)
+
+# calcul le pourcentage de repartition par classe de référence
+conf_table <- conf_table %>%
+  group_by(Reference) %>%
+  mutate(Pourcentage = Freq / sum(Freq) * 100)
+
+# Plot de la matrice de confusion
+plot_confu <- ggplot(data = conf_table, aes(x = Prediction, y = Reference, fill = Pourcentage)) +
+  geom_tile(color = "white") +  # Utilise geom_tile pour un effet de grille
+  scale_fill_gradient(low = "white", high = "blue", limits = c(0, 100)) +  # Dégradé de couleur (blanc -> bleu)
+  geom_text(aes(label = sprintf("%.1f%%", Pourcentage)), vjust = 1) +  # Ajouter les pourcentages
+  labs(title = "Matrice de confusion", x = "Classe Prédite", y = "Classe Réelle") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotation des labels
+  
+
+plot_confu
 
 #### enregistrement RData ####
 
@@ -99,20 +110,10 @@ save(foret, file = "mod_foret.RData")
 save(table_confu, file = "table_confu.RData")
 
 
-# Test hyperparamètres
-
-weights_vector <- class_weights[as.character(data.train$IQA)]
-control <- trainControl(method = "cv", number = 5, search = "random")
-
+####### Test hyperparamètres #######
+ 
 # Random search sur Ranger
-# model <- train(IQA ~ ., 
-#                data = data.train, 
-#                method = "ranger",
-#                weights = weights_vector,
-#                trControl = control, 
-#                tuneLength = 3) # Essayez 3 configurations différentes
-
-# => trop long à tourner, on garde les valeurs prise par ranger pour faire le modèle
+# => trop long à tourner, on garde les valeurs par défaut utilisé par ranger
 
 ##############
 

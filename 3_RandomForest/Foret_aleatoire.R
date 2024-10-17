@@ -80,8 +80,11 @@ prediction <- predict(foret, data.test)
 
 pred_class <- apply(prediction$predictions, 1, which.max)
 
-levels_IQA <- levels(data$IQA)  # Récupérer les niveaux de la variable IQA
-pred_class <- factor(pred_class, levels = seq_along(levels_IQA), labels = levels_IQA)
+levels_order <- c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux")
+
+data.test$IQA <- factor(data.test$IQA, levels = levels_order) # mettre les modalités dans l'ordre
+
+pred_class <- factor(pred_class, levels = levels_order)
 
 # matrice de confusion pour évaluer le modèle
 

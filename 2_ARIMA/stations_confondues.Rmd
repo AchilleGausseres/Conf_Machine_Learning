@@ -66,8 +66,9 @@ data$IQA<-convert_to_IQAs(data$IQA_numeric)
 
 création data.train et data.test
 ```{r}
-data.train<-data[1:floor(0.85*nrow(data)),]
-data.test<-data[(floor(0.85*nrow(data))+1):nrow(data),]
+set.seed(123)
+data.train<-data[1:floor(0.80*nrow(data)),]
+data.test<-data[(floor(0.80*nrow(data))+1):nrow(data),]
 ```
 
 analyse des paramètres d'ARIMA attendus
@@ -75,33 +76,32 @@ analyse des paramètres d'ARIMA attendus
 Acf(data.train$IQA_numeric, lag.max = 168*4)->acf1  # 168 lags = une semaine 
 
 Pacf(data.train$IQA_numeric, lag.max = 48)->pacf1
+head(acf1$acf,40)
 head(pacf1$acf,15)
 
-cat(paste("le modèle est-il à différencier? 0 si non, d fois sinon.","\nd =", ndiffs(data.train$IQA_numeric)))
+require("tseries")
+adf.test(data.train$IQA_numeric)#test de stationnarité
 
 ```
-interprétations: 
-  ¤ l'Acf diminue graduellement > très longue mémoire ou composante intégrée. moyenne mobile présente
-  ¤ p=2 sur le graphe d'auto-régression. la valeur actuelle est influencée surtout par les 2 dernières valeures
-
 
 modèle ARIMA sur data.train. variable réponse Y = IQA_numeric
 ```{r}
 external_vars<-data.train[,c(2:5,12:16)]#uniquement variables numériques (!colonne 16)
 #mod.arima <- auto.arima(data.train$IQA_numeric, xreg = as.matrix(external_vars))
 #mod.arima2<-mod.arima
-mod.arima<-Arima(data.train$IQA_numeric, order=c(2,1,15),xreg = as.matrix(external_vars))
+mod.arima<-Arima(data.train$IQA_numeric,
+                 order=c(2,0,40),
+                 xreg = as.matrix(external_vars))
 res1<-summary(mod.arima)
 res2<-checkresiduals(mod.arima)
 ```
-auto.arima a identifier les paramètres (p=2, d=0, q = 1) pour un modèle optimisé.
-la significativité de ce modèle est cependant ~0.03 < 0.05 signifiant que les résidus ont toujours un effet sur la valeur actuelle (i.e. l'effet des résidus n'a pas totalement été enlevé du modèle)
 
 prédiction sur le jeu de données test
 ```{r}
 external_vars_test<-data.test[,c(2:5,12:16)]#sans les concentrations de polluants
 forecasted_values <- forecast(mod.arima, xreg = as.matrix(external_vars_test))
-plot(forecasted_values$mean)
+plot(forecasted_values$mean,xlab="temps",ylab="IQA numérique prédit")
+plot(forecasted_values$mean[1:50],xlab="temps",ylab="IQA numérique prédit")
 ```
 transformation des IQAs numériques obtenus en IQA afin de comparer aux vraies valeurs
 ```{r}
@@ -136,6 +136,11 @@ matrices de confusion
               "\naccuracy globale:", 100*round(confusion_matrix$overall[1],3),"%"
               ))
 ```
+```{r}
+  confusion_matrix <- confusionMatrix(as.factor(predicted_IQAs), as.factor(actual_IQAs),mod="prec_recall")
+confusion_matrix
+```
+
 aide à l'interprétation des spécifité et sensitivité
 ```{r}
 data.test$IQA <- factor(data.test$IQA, levels = c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux"))
@@ -162,7 +167,7 @@ par(mfrow = c(2, 2))
 plot(acc[1:24], type = "l", main = "premier jour", xlab = "heures", ylab = "accuracy")
 plot(acc[1:48], type = "l", main = "deux premiers jours", xlab = "heures", ylab = "accuracy")
 plot(acc[1:72], type = "l", main = "trois premiers jours", xlab = "heures", ylab = "accuracy")
-plot(acc[1:168], type = "l", main = "trois premiers jours", xlab = "heures", ylab = "accuracy")
+plot(acc[1:168], type = "l", main = "première semaine", xlab = "heures", ylab = "accuracy")
 par(mfrow = c(1, 1))
 plot(acc, type = "l", main = "l'accuracy cumulative au cours du temps sur tout le dataset data.test", xlab = "heures", ylab = "accuracy")
 ```
@@ -192,22 +197,16 @@ ggplot(cumulative_accuracy_df, aes(x = index, y = cumulative_accuracy, color = p
                                   "très non-sain" = "purple", 
                                   "dangereux" = "purple4"))
 ```
+
+visualisations pour présentation CANVA
 ```{r}
-
+matrice_confusion<-as.data.frame(confusion_matrix$table)
+str(matrice_confusion)
+total <- sum(matrice_confusion$Freq)
+ggplot(matrice_confusion,aes(x=Prediction, y = Reference, fill = Freq))+
+  geom_tile()+
+  geom_text(aes(label = paste(100*round(Freq/total,3),"%")), color = "white", size = 3) +  # Add cell values
+  scale_fill_gradient(low = "white", high = "blue") +         # Customize color gradient
+  labs(title = "heatmap de la matrice de confusion", x = "prédits", y = "référence") +
+  theme_minimal()
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

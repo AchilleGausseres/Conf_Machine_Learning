@@ -1,0 +1,9 @@
+le fichier utilisé est : dfplusIQA_NAcomplet.csv. fichier avec les IQAs calculés et les NAs complétés
+
+modARIMA.Rmd créer un modèle ARIMA pour la station 'Tiantan' et effectue une prédiction sur les données tests de Tiantan
+
+
+stations_confondues.Rmd effectue la même tâche mais en faisant une moyenne de toutes les stations (on confond les stations) pour chaque heure.
+ce fichier utilise un modèle avec une moyenne mobile (paramètre q) bien plus élevée afin de rester fidèle au graphique ACF qui indique les corrélations entre les résidus passés et la valeur actuelle.
+or, ceci requiert ⚠beaucoup plus de ressources⚠.
+  > un fichier .RData est mis à disposition. ce fichier contient l'environnement stations_confondues.Rmd après lancement.

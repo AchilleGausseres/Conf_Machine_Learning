@@ -5,12 +5,14 @@ library(rpart)
 library(caret)
 library(dplyr)
 
-## IMPORT DES DONNÉES 
+######### IMPORT DES DONNÉES #########
+
 data <- read.table(file = "dfplusIQA_NAcomplet.csv", 
                    header = T, sep= ",", stringsAsFactors = T, encoding = "utf-8")
 
 
-## REORGANISATION DU JEU DE DONNÉES   
+######### REORGANISATION DU JEU DE DONNÉES #########
+
 data <- data[,-(6:11)]    # enlever 6 facteurs de pollution
 data <- data[,-(13:18)]   # enelever IQA par facteur
 
@@ -19,8 +21,10 @@ data <- data[,-(13:18)]   # enelever IQA par facteur
 data <- as.data.table(data)
 setkey(data, station, year, month, day, hour)
 
+
 # Création des lags 
 lag_days <- c(1,2,3,4,5,6,12,18,24)
+
 
 # Créer des lags pour chaque délai dans lag_days
 for(i in lag_days){
@@ -32,8 +36,10 @@ for(i in lag_days){
   data[, paste0("WSPM_lag_", i, "h_") := shift(WSPM, n = i, type = "lag"), by = station]
 }
 
+
 # Convertir de nouveau en data.frame
 data <- as.data.frame(data)
+
 
 # Supprimer les premières lignes avec NA dues aux lags
 data <- na.omit(data)
@@ -41,7 +47,8 @@ data <- na.omit(data)
 data <- data[,-(1:5)]   # enleve données temporelles
 data <-data[,-7]        # enleve station
 
-##### ordonner modalités #####
+
+######### Ordonner les modalités #########
 
 levels_order <- c("bon", "modéré", "non-sain pour sensibles", "non-sain", "très non-sain", "dangereux")
 
@@ -65,8 +72,12 @@ class_distribution <- data %>%
 
 print(class_distribution)
 
+# La modalité "dangereux" est sur-représentée (41%), ce qui pourrais amener le modèle 
+# à prédire davantage cette modalité au détriment des autres.
+# On peut ajouter des poids pour essayer d'équilibrer les classes lors de la prédiction.
 
-##### équilibrer les données #####
+
+######### Equilibrer les données #########
 
 class_weights <- 1 / (table(data$IQA))
 class_weights <- class_weights/sum(class_weights)
@@ -81,14 +92,14 @@ pred_class <- apply(prediction$predictions, 1, which.max)
 pred_class <- factor(pred_class, levels = seq_along(levels_order), 
                      labels = levels_order)
 
-# matrice de confusion pour évaluer le modèle
+# Matrice de confusion pour évaluer le modèle
 
 confusionMatrix(pred_class, data.test$IQA, mode = "prec_recall")
 table_confu <- confusionMatrix(pred_class, data.test$IQA)
 
 conf_table <- as.data.frame(table_confu$table)
 
-# calcul le pourcentage de repartition par classe de référence
+# Calcul le pourcentage de repartition par classe de référence
 conf_table <- conf_table %>%
   group_by(Reference) %>%
   mutate(Pourcentage = Freq / sum(Freq) * 100)
@@ -101,11 +112,40 @@ plot_confu <- ggplot(data = conf_table, aes(x = Prediction, y = Reference, fill 
   labs(title = "Matrice de confusion", x = "Classe Prédite", y = "Classe Réelle") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotation des labels
-  
 
 plot_confu
 
-#### enregistrement RData ####
+
+######## Importance des variables ########
+
+# Extraire l'importance des variables
+importance_values <- foret$variable.importance
+
+# Convertir en dataframe pour faciliter l'affichage
+importance_data <- data.frame(Variable = names(importance_values),
+                            Importance = importance_values)
+
+# Trier par ordre décroissant d'importance
+importance_data <- importance_data[order(importance_data$Importance, decreasing = TRUE),]
+
+# Afficher l'importance des variables dans un graphique
+plot_imp <- ggplot(importance_data, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +  # Inverser les axes pour une meilleure lisibilité
+  xlab("Variables") + 
+  ylab("Importance (Impureté)") + 
+  ggtitle("Importance des variables basée sur l'impureté") +
+  theme_minimal()
+
+plot_imp
+
+# Affiche l'importance des varaibles, les variables avec une grande valeur joue un role 
+# important dans la division des noeuds (diminution de l'impureté)
+# On peut voir que la variable RAIN (mesure de précipitation) n'a que très peu de role
+# dans la prédiction. On peut donc faire le modèle sans RAIN sans impacter la taux de prédiction.
+
+
+#### Enregistrement RData ####
 
 save(data, file = "data_randomforest.RData")
 save(foret, file = "mod_foret.RData")
@@ -119,6 +159,7 @@ save(table_confu, file = "table_confu.RData")
 
 ##############
 
+# Rééchantillonnage
 # N'aide pas, tourne en boucle avec plus de répétition -> accuracy 47%
 # Définir le contrôle de la validation croisée avec sur-échantillonnage
 # train_control <- trainControl(method = "cv", number = 5, sampling = "up")  # "up" pour sur-échantillonnage

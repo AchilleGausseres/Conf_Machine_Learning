@@ -1,19 +1,14 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Oct 14 17:06:18 2024
-
-@author: achillegausseres
-"""
-
 import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+import sklearn
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import seaborn as sns
+import os
 
 # -----------------------------
 # 1. Définir les fonctions de métriques manuelles
@@ -60,41 +55,61 @@ def accuracy_manual(y_true, y_pred):
     total = len(y_true)
     return correct / total
 
+# -----------------------------
+# 2. Charger et Prétraiter les Données
+# -----------------------------
 
-
+from google.colab import drive
+drive.mount('/content/drive')
+file_path = '/content/drive/My Drive/dfplusIQA_NAcomplet.csv'
 
 # Charger les données
-df = pd.read_csv("/Users/achillegausseres/OneDrive/PRO/ACO/3A/Conf_Machine_Learning/Conf_Machine_Learning_repo/dfplusIQA_NAcomplet.csv", encoding= "latin1")
+df = pd.read_csv(file_path, encoding= "utf-8")
 
 
+# -----------------------------
+# 3. Encodage One-Hot pour 'station' et 'wd'
+# -----------------------------
 
-# Encodage One-Hot pour 'station' et 'wd'
 categorical_vars = ['station', 'wd']
 df = pd.get_dummies(df, columns=categorical_vars, drop_first=True)
+print("\nEncodage One-Hot pour 'station' et 'wd' effectué.")
 
-# Convertir les colonnes quantitatives en numériques
+# -----------------------------
+# 4. Convertir les Colonnes Quantitatives en Numériques
+# -----------------------------
+
 quantitative_vars = ['TEMP', 'PRES', 'DEWP', 'WSPM', 'RAIN']
 for var in quantitative_vars:
     df[var] = pd.to_numeric(df[var], errors='coerce')
 
+print("\nConversion des colonnes quantitatives en numériques effectuée.")
 
+# -----------------------------
+# 5. Normalisation des Variables Quantitatives
+# -----------------------------
 
-# Normalisation des variables quantitatives
 mean = df[quantitative_vars].mean()
 std = df[quantitative_vars].std()
 df[quantitative_vars] = (df[quantitative_vars] - mean) / std
 
-# Encodage des variables temporelles en variables cycliques
+print("\nNormalisation des variables quantitatives effectuée.")
+
+# -----------------------------
+# 6. Encodage des Variables Temporelles en Variables Cycliques
+# -----------------------------
+
 df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
 df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
 df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
 df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
 
-# Supprimer les colonnes temporelles originales
+# Supprimer les Colonnes Temporelles Originales
 df = df.drop(['year', 'month', 'day', 'hour'], axis=1)
+print("\nEncodage des variables temporelles en variables cycliques effectué et colonnes originales supprimées.")
 
 # -----------------------------
-# 3. Encodage de la Cible avec Ordre Spécifique
+# 7. Encodage Correct de la Cible avec Ordre Spécifique
 # -----------------------------
 
 # Définir l'ordre des catégories souhaitées
@@ -107,10 +122,44 @@ df['IQA'] = pd.Categorical(df['IQA'], categories=desired_order, ordered=True)
 df['IQA_encoded'] = df['IQA'].cat.codes
 
 # Vérifier les types de données après prétraitement
+print("\nTypes de données après prétraitement :")
 print(df.dtypes)
 
+# Vérifier les valeurs uniques de 'IQA' et gérer les classes non mappées
+unique_iqa = df['IQA'].unique()
+print("\nValeurs uniques de 'IQA' dans les données:")
+print(unique_iqa)
+
+# Identifier les valeurs non mappées
+unmapped_iqa = set(unique_iqa) - set(desired_order)
+if unmapped_iqa:
+    print("\nValeurs de 'IQA' non mappées et seront exclues:")
+    print(unmapped_iqa)
+    # Exclure ces lignes
+    df = df[df['IQA'].isin(desired_order)]
+    print(f"Nombre de lignes après exclusion: {len(df)}")
+else:
+    print("\nToutes les valeurs de 'IQA' sont mappées.")
+
+# Re-encoder 'IQA_encoded' après exclusion
+df['IQA_encoded'] = df['IQA'].cat.codes
+
+# Vérifier s'il y a des valeurs manquantes après le mapping
+missing_encoded = df['IQA_encoded'].isnull().sum()
+if missing_encoded > 0:
+    print(f"\nIl y a {missing_encoded} lignes avec 'IQA_encoded' manquant. Elles seront exclues.")
+    df = df.dropna(subset=['IQA_encoded'])
+    df['IQA_encoded'] = df['IQA_encoded'].astype(int)
+else:
+    print("\nToutes les lignes ont été correctement encodées.")
+
+# Vérifier le mapping
+print("\nMapping des labels :")
+for code, category in enumerate(desired_order):
+    print(f"Code {code}: {category}")
+
 # -----------------------------
-# 4. Préparer les Séquences
+# 8. Préparer les Séquences
 # -----------------------------
 
 sequence_length = 24
@@ -119,7 +168,7 @@ target = df['IQA_encoded'].values
 
 def create_sequences(features, target, sequence_length):
     """
-    Crée des séquences de données pour le modèle Conv1D.
+    Crée des séquences de données pour le modèle Conv1D ou RNN.
     """
     X = []
     y = []
@@ -131,33 +180,69 @@ def create_sequences(features, target, sequence_length):
 X, y = create_sequences(features, target, sequence_length)
 
 # Vérifier les types et la forme
-print(f'X dtype: {X.dtype}, y dtype: {y.dtype}')
+print(f'\nX dtype: {X.dtype}, y dtype: {y.dtype}')
 print(f'X shape: {X.shape}, y shape: {y.shape}')
 
 # Assurez-vous que X est float32 et y est int64
 X = X.astype(np.float32)
 y = y.astype(np.int64)
 
-print(f'X dtype after conversion: {X.dtype}, y dtype after conversion: {y.dtype}')
+print(f'\nX dtype after conversion: {X.dtype}, y dtype after conversion: {y.dtype}')
 
 # -----------------------------
-# 5. Diviser les Données en Ensembles d'Entraînement et de Test
+# 9. Diviser les Données en Ensembles d'Entraînement et de Test
 # -----------------------------
 
 train_size = int(0.75 * len(X))
 X_train, X_test = X[:train_size], X[train_size:]
 y_train, y_test = y[:train_size], y[train_size:]
 
-print(f'Train X shape: {X_train.shape}')
+valid_size = int(0.8* len(X_train))
+X_train, X_valid = X_train[:valid_size], X_train[valid_size:]
+y_train, y_valid = y_train[:valid_size], y_train[valid_size:]
+
+
+
+print(f'\nTrain X shape: {X_train.shape}')
 print(f'Train y shape: {y_train.shape}')
+print(f'Valid X shape: {X_valid.shape}')
+print(f'Valid y shape: {y_valid.shape}')
 print(f'Test X shape: {X_test.shape}')
 print(f'Test y shape: {y_test.shape}')
 
+
 # -----------------------------
-# 6. Définir le Dataset Personnalisé et les DataLoaders
+# 10. Calculer les Poids des Classes et Créer le WeightedRandomSampler
 # -----------------------------
 
-class AQADataset(Dataset):
+# Calculer le nombre d'échantillons par classe dans l'ensemble d'entraînement
+class_counts = np.bincount(y_train)
+print("Nombre d'échantillons par classe dans l'ensemble d'entraînement :", class_counts)
+
+# Calculer les poids des classes (inverse des fréquences)
+class_weights = 1. / class_counts
+print("Poids des classes :", class_weights)
+
+# Normaliser les poids des classes (optionnel mais recommandé)
+class_weights = class_weights / class_weights.sum() * len(class_weights)
+print("Poids des classes normalisés :", class_weights)
+
+# Attribuer un poids à chaque échantillon basé sur la classe
+sample_weights = class_weights[y_train]
+print("Poids des échantillons :", sample_weights[:10])  # Afficher les 10 premiers poids pour vérification
+
+# Convertir les poids des échantillons en Tensor
+sample_weights = torch.from_numpy(sample_weights).double()
+
+# Créer le WeightedRandomSampler
+sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+print("WeightedRandomSampler créé.")
+
+# -----------------------------
+# 11. Définir le Dataset Personnalisé et les DataLoaders avec WeightedRandomSampler
+# -----------------------------
+
+class IQADataset(Dataset):
     def __init__(self, X, y):
         self.X = torch.tensor(X, dtype=torch.float32)
         self.y = torch.tensor(y, dtype=torch.long)
@@ -168,16 +253,21 @@ class AQADataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
-# Créer les datasets et les DataLoaders
-batch_size = 32
-train_dataset = AQADataset(X_train, y_train)
-test_dataset = AQADataset(X_test, y_test)
+# Créer les datasets
+train_dataset = IQADataset(X_train, y_train)
+valid_dataset = IQADataset(X_valid, y_valid)
+test_dataset = IQADataset(X_test, y_test)
 
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+# Créer les DataLoaders avec le WeightedRandomSampler pour l'entraînement
+batch_size = 128
+train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
+print("\nDataLoaders créés avec WeightedRandomSampler pour l'entraînement.")
+
 # -----------------------------
-# 7. Définir le Modèle Conv1D avec PyTorch
+# 12. Définir le Modèle Conv1D avec PyTorch
 # -----------------------------
 
 class Conv1DModel(nn.Module):
@@ -209,25 +299,35 @@ class Conv1DModel(nn.Module):
 n_features = X.shape[2]
 num_classes = len(desired_order)  # 6 classes
 model = Conv1DModel(input_channels=n_features, num_classes=num_classes)
+print("\nArchitecture du modèle Conv1D :")
 print(model)
 
 # -----------------------------
-# 8. Définir la Fonction de Perte et l'Optimiseur
+# 13. Définir la Fonction de Perte et l'Optimiseur avec Pondération des Classes (Optionnel)
 # -----------------------------
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+# Convertir les poids des classes en Tensor et les déplacer vers le device
+class_weights_tensor = torch.tensor(class_weights, dtype=torch.float32).to(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+print("Poids des classes pour la fonction de perte :", class_weights_tensor)
+
+# Définir la fonction de perte avec les poids des classes
+criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
+
+# Définir l'optimiseur
+optimizer = optim.Adam(model.parameters(), lr=0.0005)
+
+print("\nFonction de perte et optimiseur définis avec pondération des classes.")
 
 # -----------------------------
-# 9. Déplacer le Modèle vers le Device
+# 14. Déplacer le Modèle vers le Device
 # -----------------------------
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f'Utilisation du device : {device}')
+print(f'\nUtilisation du device : {device}')
 model.to(device)
 
 # -----------------------------
-# 10. Initialiser les Listes pour Stocker les Métriques
+# 15. Initialiser les Listes pour Stocker les Métriques
 # -----------------------------
 
 train_losses = []
@@ -236,10 +336,10 @@ val_losses = []
 val_accuracies = []
 
 # -----------------------------
-# 11. Entraîner le Modèle avec des Métriques Personnalisées
+# 16. Entraîner le Modèle avec des Métriques Personnalisées
 # -----------------------------
 
-num_epochs = 20  # Réduit à 5 pour le test
+num_epochs = 400
 
 for epoch in range(num_epochs):
     model.train()
@@ -277,7 +377,7 @@ for epoch in range(num_epochs):
     val_total = 0
 
     with torch.no_grad():
-        for val_inputs, val_labels in test_loader:
+        for val_inputs, val_labels in valid_loader:
             val_inputs = val_inputs.to(device)
             val_labels = val_labels.to(device)
 
@@ -301,7 +401,7 @@ for epoch in range(num_epochs):
     print('-' * 30)
 
 # -----------------------------
-# 12. Collecter les Prédictions et les Labels pour les Métriques Manuelles
+# 17. Collecter les Prédictions et les Labels pour les Métriques Manuelles
 # -----------------------------
 
 model.eval()
@@ -321,7 +421,7 @@ with torch.no_grad():
         all_labels.extend(labels.cpu().numpy())
 
 # -----------------------------
-# 13. Calculer et Afficher les Métriques Manuelles
+# 18. Calculer et Afficher les Métriques Manuelles
 # -----------------------------
 
 # Calcul des métriques manuelles
@@ -352,15 +452,15 @@ for cls in range(num_classes):
 
 print(f"\nExactitude Globale: {accuracy:.4f}")
 
+
 # -----------------------------
-# 14. Visualiser la Matrice de Confusion
+# 19. Visualiser la Matrice de Confusion
 # -----------------------------
 
 def plot_confusion_matrix(cm, class_names):
     plt.figure(figsize=(10, 8))
-    class_names_pred = [char + "_pred" for char in class_names]
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                xticklabels=class_names_pred, yticklabels=class_names)
+                xticklabels=class_names, yticklabels=class_names)
     plt.ylabel('Vérité')
     plt.xlabel('Prédiction')
     plt.title('Matrice de Confusion')
@@ -373,7 +473,7 @@ class_names = desired_order
 plot_confusion_matrix(cm, class_names)
 
 # -----------------------------
-# 15. Visualiser les Courbes d'Apprentissage
+# 20. Visualiser les Courbes d'Apprentissage
 # -----------------------------
 
 epochs = range(1, num_epochs + 1)
@@ -400,4 +500,24 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
+
+def plot_confusion_matrix(cm, class_names):
+    # Calculer les pourcentages par ligne
+    cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm_percent, annot=True, fmt=".2%", cmap='Blues',
+                xticklabels=class_names, yticklabels=class_names)
+
+    plt.ylabel('Vérité')
+    plt.xlabel('Prédiction')
+    plt.title('Matrice de Confusion (en %)')
+    plt.show()
+
+
+# Obtenir les noms des classes
+class_names = desired_order
+
+# Afficher la matrice de confusion avec pourcentages
+plot_confusion_matrix(cm, class_names)
 

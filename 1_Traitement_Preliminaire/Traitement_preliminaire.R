@@ -53,6 +53,7 @@ df_sorted <- df_sorted[,-19]
 
 ## On passe à l'imputation des données manquantes avec des forets aléatoires. 
 
+set.seed(123)
 df_imput <- missRanger(df_sorted, pmm.k = 5, num.trees = 100, seed = 1)
 sum(is.na(df_imput))
 

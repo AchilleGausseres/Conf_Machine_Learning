@@ -1,0 +1,3 @@
+Le fichier utilisé en entrée est " dfplusIQA_NAcomplet.csv ". 
+Vous pouvez lancer le code sur votre environnement python avec pytorch. 
+Sinon vous pouvez utilisé le fichier adapté à Google Colab. 
